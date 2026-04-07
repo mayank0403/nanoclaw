@@ -30,16 +30,17 @@ List skill directories available to you:
 ls -1 /home/node/.claude/skills/ 2>/dev/null || echo "No skills found"
 ```
 
-Each directory is an installed skill. The directory name is the skill name (e.g., `agent-browser` → `/agent-browser`).
+Each directory is an installed skill. The directory name is the skill name (e.g., `capabilities` → `/capabilities`).
 
 ### 2. Available tools
 
-Read the allowed tools from your SDK configuration. You always have access to:
+You have access to:
 - **Core:** Bash, Read, Write, Edit, Glob, Grep
-- **Web:** WebSearch, WebFetch
 - **Orchestration:** Task, TaskOutput, TaskStop, TeamCreate, TeamDelete, SendMessage
 - **Other:** TodoWrite, ToolSearch, Skill, NotebookEdit
 - **MCP:** mcp__nanoclaw__* (messaging, tasks, group management)
+
+Note: WebSearch, WebFetch, and agent-browser are **not available** in this environment. All external actions go through Pincer (see `/workspace/global/CLAUDE.md`).
 
 ### 3. MCP server tools
 
@@ -53,12 +54,18 @@ The NanoClaw MCP server exposes these tools (via `mcp__nanoclaw__*` prefix):
 - `update_task` — update an existing task
 - `register_group` — register a new chat/group (main only)
 
-### 4. Container skills (Bash tools)
+### 4. Pincer — host access
 
-Check for executable tools in the container:
+All host actions (email, files, git, shell commands) go through Pincer. Check what's currently available:
 
 ```bash
-which agent-browser 2>/dev/null && echo "agent-browser: available" || echo "agent-browser: not found"
+curl -s $PINCER_PROXY_URL/graph | python3 -c "
+import sys, json
+g = json.load(sys.stdin)
+for n in g['nodes']:
+    if n['id'] != 'start':
+        print('•', n['id'], '—', (n.get('description') or '')[:60])
+"
 ```
 
 ### 5. Group info
@@ -76,18 +83,16 @@ Present the report as a clean, readable message. Example:
 📋 *NanoClaw Capabilities*
 
 *Installed Skills:*
-• /agent-browser — Browse the web, fill forms, extract data
 • /capabilities — This report
 (list all found skills)
 
 *Tools:*
 • Core: Bash, Read, Write, Edit, Glob, Grep
-• Web: WebSearch, WebFetch
 • Orchestration: Task, TeamCreate, SendMessage
 • MCP: send_message, schedule_task, list_tasks, pause/resume/cancel/update_task, register_group
 
-*Container Tools:*
-• agent-browser: ✓
+*Host Access (via Pincer):*
+• (list nodes from graph query above)
 
 *System:*
 • Group memory: yes/no
@@ -95,6 +100,6 @@ Present the report as a clean, readable message. Example:
 • Main channel: yes
 ```
 
-Adapt the output based on what you actually find — don't list things that aren't installed.
+Adapt the output based on what you actually find — don't list things that aren't available.
 
 **See also:** `/status` for a quick health check of session, workspace, and tasks.

@@ -449,6 +449,7 @@ async function runQuery(
             append: globalClaudeMd,
           }
         : undefined,
+      disallowedTools: ['WebSearch', 'WebFetch'],
       allowedTools: [
         'Bash',
         'Read',
@@ -456,8 +457,6 @@ async function runQuery(
         'Edit',
         'Glob',
         'Grep',
-        'WebSearch',
-        'WebFetch',
         'Task',
         'TaskOutput',
         'TaskStop',

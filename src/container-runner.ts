@@ -229,6 +229,16 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Shadow agent-browser with a disabled stub — internet browsing must go through Pincer.
+  const disabledBrowser = path.join(process.cwd(), 'container', 'disabled-agent-browser');
+  if (fs.existsSync(disabledBrowser)) {
+    mounts.push({
+      hostPath: disabledBrowser,
+      containerPath: '/usr/local/bin/agent-browser',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -266,6 +276,20 @@ async function buildContainerArgs(
       'OneCLI gateway not reachable — container will have no credentials',
     );
   }
+
+  // Attach to isolated network — no default route, no direct internet access.
+  // host.docker.internal is still reachable via --add-host below so Pincer
+  // (running on the host at port 8080) can be reached.
+  args.push('--network', 'nanoclaw-net');
+
+  // Route all agent actions through Pincer permission enforcement layer
+  args.push('-e', 'PINCER_PROXY_URL=http://host.docker.internal:8080');
+
+  // Bypass the HTTPS filtering proxy for direct HTTP access to Pincer (port 8080).
+  // The filtering proxy only handles HTTPS CONNECT tunnels; plain HTTP to host.docker.internal
+  // must go directly or it gets a 405.
+  args.push('-e', 'NO_PROXY=host.docker.internal');
+  args.push('-e', 'no_proxy=host.docker.internal');
 
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());

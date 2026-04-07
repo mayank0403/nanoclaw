@@ -12,9 +12,12 @@ export const CONTAINER_RUNTIME_BIN = 'docker';
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
-  // On Linux, host.docker.internal isn't built-in — add it explicitly
+  // On Linux, host.docker.internal isn't built-in — add it explicitly.
+  // Use the nanoclaw-net gateway (172.19.0.1) rather than the Docker-default
+  // host-gateway (172.17.0.1 / docker0), which is unreachable from the
+  // Internal nanoclaw-net bridge.
   if (os.platform() === 'linux') {
-    return ['--add-host=host.docker.internal:host-gateway'];
+    return ['--add-host=host.docker.internal:172.19.0.1'];
   }
   return [];
 }
