@@ -2,6 +2,7 @@ import {
   Client,
   Events,
   GatewayIntentBits,
+  Interaction,
   Message,
   TextChannel,
 } from 'discord.js';
@@ -21,6 +22,9 @@ export interface DiscordChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
   registeredGroups: () => Record<string, RegisteredGroup>;
+  // Channel ID owned by Pincer's LeaderClaw proxy. Messages here are forwarded
+  // to Pincer instead of the normal nanoclaw agent pipeline.
+  leaderChannelId?: string;
 }
 
 export class DiscordChannel implements Channel {
@@ -29,10 +33,12 @@ export class DiscordChannel implements Channel {
   private client: Client | null = null;
   private opts: DiscordChannelOpts;
   private botToken: string;
+  private leaderChannelId: string | null = null;
 
   constructor(botToken: string, opts: DiscordChannelOpts) {
     this.botToken = botToken;
     this.opts = opts;
+    this.leaderChannelId = opts.leaderChannelId ?? null;
   }
 
   async connect(): Promise<void> {
@@ -131,7 +137,34 @@ export class DiscordChannel implements Channel {
         }
       }
 
-      // Store chat metadata for discovery
+      // Leader channel: owned entirely by Pincer — forward to proxy, skip nanoclaw routing
+      if (this.leaderChannelId && channelId === this.leaderChannelId) {
+        try {
+          await fetch('http://localhost:8080/proxy/user_message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              channel_id: channelId,
+              message_id: msgId,
+              sender_id: sender,
+              sender_name: senderName,
+              content,
+            }),
+          });
+          logger.info(
+            { channelId, sender: senderName },
+            'Leader channel message forwarded to Pincer',
+          );
+        } catch (err) {
+          logger.error(
+            { channelId, err },
+            'Failed to forward leader message to Pincer',
+          );
+        }
+        return; // Pincer owns this channel; do NOT call onMessage or store chat metadata
+      }
+
+      // Store chat metadata for discovery (non-leader channels only)
       const isGroup = message.guild !== null;
       this.opts.onChatMetadata(
         chatJid,
@@ -167,6 +200,49 @@ export class DiscordChannel implements Channel {
         'Discord message stored',
       );
     });
+
+    // Forward Pincer button interactions to Pincer proxy
+    this.client.on(
+      Events.InteractionCreate,
+      async (interaction: Interaction) => {
+        if (!interaction.isButton()) return;
+        if (!interaction.customId.startsWith('pincer_')) return;
+
+        // Acknowledge immediately (type 6 = DEFERRED_UPDATE_MESSAGE) to avoid "interaction failed"
+        try {
+          await fetch(
+            `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 6 }),
+            },
+          );
+        } catch (ackErr) {
+          logger.error({ ackErr }, 'Failed to acknowledge Discord interaction');
+        }
+
+        // Forward to Pincer
+        try {
+          await fetch('http://localhost:8080/proxy/interaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              custom_id: interaction.customId,
+              user_id: interaction.user.id,
+              message_id: interaction.message.id,
+              channel_id: interaction.channelId,
+            }),
+          });
+          logger.info(
+            { customId: interaction.customId, userId: interaction.user.id },
+            'Pincer interaction forwarded',
+          );
+        } catch (fwdErr) {
+          logger.error({ fwdErr }, 'Failed to forward interaction to Pincer');
+        }
+      },
+    );
 
     // Handle errors gracefully
     this.client.on(Events.Error, (err) => {
@@ -253,12 +329,24 @@ export class DiscordChannel implements Channel {
 }
 
 registerChannel('discord', (opts: ChannelOpts) => {
-  const envVars = readEnvFile(['DISCORD_BOT_TOKEN']);
+  const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'PINCER_LEADER_CHANNEL_ID']);
   const token =
     process.env.DISCORD_BOT_TOKEN || envVars.DISCORD_BOT_TOKEN || '';
   if (!token) {
     logger.warn('Discord: DISCORD_BOT_TOKEN not set');
     return null;
   }
-  return new DiscordChannel(token, opts);
+  const leaderChannelId =
+    process.env.PINCER_LEADER_CHANNEL_ID ||
+    envVars.PINCER_LEADER_CHANNEL_ID ||
+    '';
+  if (!leaderChannelId) {
+    logger.error(
+      'PINCER_LEADER_CHANNEL_ID is not set — LeaderClaw Discord proxy will not work',
+    );
+  }
+  return new DiscordChannel(token, {
+    ...opts,
+    leaderChannelId: leaderChannelId || undefined,
+  });
 });
