@@ -138,14 +138,23 @@ export class DiscordChannel implements Channel {
       }
 
       // Leader channel (and threads under it): owned entirely by Pincer — forward to proxy,
-      // skip nanoclaw routing. Thread check: isThread() is a Discord.js type predicate so
-      // parentId is safely accessible after it.
+      // skip nanoclaw routing. Threads created via REST API may not be in the Discord.js
+      // channel cache yet, so parentId can be null; fetch the channel to populate it.
       const isLeaderChannel =
         this.leaderChannelId && channelId === this.leaderChannelId;
-      const isLeaderThread =
-        this.leaderChannelId &&
-        message.channel.isThread() &&
-        message.channel.parentId === this.leaderChannelId;
+      let isLeaderThread = false;
+      if (this.leaderChannelId && message.channel.isThread()) {
+        let parentId = message.channel.parentId;
+        if (!parentId) {
+          try {
+            const fetched = await message.channel.fetch();
+            parentId = fetched.parentId;
+          } catch {
+            // fetch failed — treat as non-leader thread
+          }
+        }
+        isLeaderThread = parentId === this.leaderChannelId;
+      }
       if (isLeaderChannel || isLeaderThread) {
         try {
           await fetch('http://localhost:8080/proxy/user_message', {
