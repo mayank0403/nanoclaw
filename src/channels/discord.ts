@@ -137,8 +137,15 @@ export class DiscordChannel implements Channel {
         }
       }
 
-      // Leader channel: owned entirely by Pincer — forward to proxy, skip nanoclaw routing
-      if (this.leaderChannelId && channelId === this.leaderChannelId) {
+      // Leader channel (and threads under it): owned entirely by Pincer — forward to proxy,
+      // skip nanoclaw routing. Thread check: isThread() is a Discord.js type predicate so
+      // parentId is safely accessible after it.
+      const isLeaderChannel = this.leaderChannelId && channelId === this.leaderChannelId;
+      const isLeaderThread =
+        this.leaderChannelId &&
+        message.channel.isThread() &&
+        message.channel.parentId === this.leaderChannelId;
+      if (isLeaderChannel || isLeaderThread) {
         try {
           await fetch('http://localhost:8080/proxy/user_message', {
             method: 'POST',
@@ -329,7 +336,10 @@ export class DiscordChannel implements Channel {
 }
 
 registerChannel('discord', (opts: ChannelOpts) => {
-  const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'PINCER_LEADER_CHANNEL_ID']);
+  const envVars = readEnvFile([
+    'DISCORD_BOT_TOKEN',
+    'PINCER_LEADER_CHANNEL_ID',
+  ]);
   const token =
     process.env.DISCORD_BOT_TOKEN || envVars.DISCORD_BOT_TOKEN || '';
   if (!token) {
