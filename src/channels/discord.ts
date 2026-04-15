@@ -218,14 +218,157 @@ export class DiscordChannel implements Channel {
       );
     });
 
-    // Forward Pincer button interactions to Pincer proxy
+    // Forward Pincer interactions (buttons, select menus, modals) to Pincer proxy
     this.client.on(
       Events.InteractionCreate,
       async (interaction: Interaction) => {
+        // --- Modal submissions (pincer_modal_submit_*) ---
+        if (interaction.isModalSubmit()) {
+          if (!interaction.customId.startsWith('pincer_modal_submit_')) return;
+          try {
+            await fetch(
+              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 6 }),
+              },
+            );
+          } catch (ackErr) {
+            logger.error({ ackErr }, 'Failed to acknowledge modal submission');
+          }
+          try {
+            const customText = interaction.fields.getTextInputValue('custom_text');
+            await fetch('http://localhost:8080/proxy/interaction', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                custom_id: interaction.customId,
+                user_id: interaction.user.id,
+                message_id: '',
+                channel_id: interaction.channelId,
+                modal_values: { custom_text: customText },
+              }),
+            });
+          } catch (fwdErr) {
+            logger.error({ fwdErr }, 'Failed to forward modal submission to Pincer');
+          }
+          return;
+        }
+
+        // --- String select menus (pincer_interview_select_*) ---
+        if (interaction.isStringSelectMenu()) {
+          if (!interaction.customId.startsWith('pincer_interview_select_')) return;
+          try {
+            await fetch(
+              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 6 }),
+              },
+            );
+          } catch (ackErr) {
+            logger.error({ ackErr }, 'Failed to acknowledge select interaction');
+          }
+          try {
+            await fetch('http://localhost:8080/proxy/interaction', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                custom_id: interaction.customId,
+                user_id: interaction.user.id,
+                message_id: interaction.message.id,
+                channel_id: interaction.channelId,
+                values: interaction.values,
+              }),
+            });
+          } catch (fwdErr) {
+            logger.error({ fwdErr }, 'Failed to forward select interaction to Pincer');
+          }
+          return;
+        }
+
+        // --- Button interactions ---
         if (!interaction.isButton()) return;
         if (!interaction.customId.startsWith('pincer_')) return;
 
-        // Acknowledge immediately (type 6 = DEFERRED_UPDATE_MESSAGE) to avoid "interaction failed"
+        // Modal trigger buttons: respond with a modal instead of forwarding
+        if (interaction.customId.startsWith('pincer_interview_modal_')) {
+          const modalCustomId = interaction.customId.replace(
+            'interview_modal_',
+            'modal_submit_',
+          );
+          try {
+            await fetch(
+              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 9, // MODAL
+                  data: {
+                    custom_id: modalCustomId,
+                    title: 'Add custom explanation',
+                    components: [
+                      {
+                        type: 1,
+                        components: [
+                          {
+                            type: 4, // TEXT_INPUT
+                            custom_id: 'custom_text',
+                            label: 'Your explanation',
+                            style: 2, // PARAGRAPH
+                            required: false,
+                            placeholder: 'Explain your reasoning...',
+                            max_length: 500,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                }),
+              },
+            );
+          } catch (err) {
+            logger.error({ err }, 'Failed to open modal');
+          }
+          return;
+        }
+
+        // Skip buttons: acknowledge only, no forwarding
+        if (interaction.customId.startsWith('pincer_interview_skip_')) {
+          try {
+            await fetch(
+              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 6 }),
+              },
+            );
+          } catch (ackErr) {
+            logger.error({ ackErr }, 'Failed to acknowledge skip button');
+          }
+          // Also forward to Pincer so it can clean up _pending_interviews
+          try {
+            await fetch('http://localhost:8080/proxy/interaction', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                custom_id: interaction.customId,
+                user_id: interaction.user.id,
+                message_id: interaction.message.id,
+                channel_id: interaction.channelId,
+              }),
+            });
+          } catch (fwdErr) {
+            logger.error({ fwdErr }, 'Failed to forward skip interaction to Pincer');
+          }
+          return;
+        }
+
+        // All other pincer_ buttons: acknowledge + forward (existing behavior)
         try {
           await fetch(
             `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
@@ -238,8 +381,6 @@ export class DiscordChannel implements Channel {
         } catch (ackErr) {
           logger.error({ ackErr }, 'Failed to acknowledge Discord interaction');
         }
-
-        // Forward to Pincer
         try {
           await fetch('http://localhost:8080/proxy/interaction', {
             method: 'POST',
