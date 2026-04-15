@@ -230,7 +230,11 @@ function buildVolumeMounts(
   });
 
   // Shadow agent-browser with a disabled stub — internet browsing must go through Pincer.
-  const disabledBrowser = path.join(process.cwd(), 'container', 'disabled-agent-browser');
+  const disabledBrowser = path.join(
+    process.cwd(),
+    'container',
+    'disabled-agent-browser',
+  );
   if (fs.existsSync(disabledBrowser)) {
     mounts.push({
       hostPath: disabledBrowser,

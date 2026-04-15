@@ -140,7 +140,8 @@ export class DiscordChannel implements Channel {
       // Leader channel (and threads under it): owned entirely by Pincer — forward to proxy,
       // skip nanoclaw routing. Thread check: isThread() is a Discord.js type predicate so
       // parentId is safely accessible after it.
-      const isLeaderChannel = this.leaderChannelId && channelId === this.leaderChannelId;
+      const isLeaderChannel =
+        this.leaderChannelId && channelId === this.leaderChannelId;
       const isLeaderThread =
         this.leaderChannelId &&
         message.channel.isThread() &&
