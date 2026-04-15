@@ -1,10 +1,14 @@
 import {
+  ActionRowBuilder,
   Client,
   Events,
   GatewayIntentBits,
   Interaction,
   Message,
+  ModalBuilder,
   TextChannel,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
@@ -226,14 +230,7 @@ export class DiscordChannel implements Channel {
         if (interaction.isModalSubmit()) {
           if (!interaction.customId.startsWith('pincer_modal_submit_')) return;
           try {
-            await fetch(
-              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 6 }),
-              },
-            );
+            await interaction.deferUpdate();
           } catch (ackErr) {
             logger.error({ ackErr }, 'Failed to acknowledge modal submission');
           }
@@ -265,14 +262,7 @@ export class DiscordChannel implements Channel {
           if (!interaction.customId.startsWith('pincer_interview_select_'))
             return;
           try {
-            await fetch(
-              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 6 }),
-              },
-            );
+            await interaction.deferUpdate();
           } catch (ackErr) {
             logger.error(
               { ackErr },
@@ -311,36 +301,21 @@ export class DiscordChannel implements Channel {
             'modal_submit_',
           );
           try {
-            await fetch(
-              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: 9, // MODAL
-                  data: {
-                    custom_id: modalCustomId,
-                    title: 'Add custom explanation',
-                    components: [
-                      {
-                        type: 1,
-                        components: [
-                          {
-                            type: 4, // TEXT_INPUT
-                            custom_id: 'custom_text',
-                            label: 'Your explanation',
-                            style: 2, // PARAGRAPH
-                            required: false,
-                            placeholder: 'Explain your reasoning...',
-                            max_length: 500,
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                }),
-              },
-            );
+            const modal = new ModalBuilder()
+              .setCustomId(modalCustomId)
+              .setTitle('Add custom explanation')
+              .addComponents(
+                new ActionRowBuilder<TextInputBuilder>().addComponents(
+                  new TextInputBuilder()
+                    .setCustomId('custom_text')
+                    .setLabel('Your explanation')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(false)
+                    .setPlaceholder('Explain your reasoning...')
+                    .setMaxLength(500),
+                ),
+              );
+            await interaction.showModal(modal);
           } catch (err) {
             logger.error({ err }, 'Failed to open modal');
           }
@@ -350,14 +325,7 @@ export class DiscordChannel implements Channel {
         // Skip buttons: acknowledge only, no forwarding
         if (interaction.customId.startsWith('pincer_interview_skip_')) {
           try {
-            await fetch(
-              `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 6 }),
-              },
-            );
+            await interaction.deferUpdate();
           } catch (ackErr) {
             logger.error({ ackErr }, 'Failed to acknowledge skip button');
           }
@@ -384,14 +352,7 @@ export class DiscordChannel implements Channel {
 
         // All other pincer_ buttons: acknowledge + forward (existing behavior)
         try {
-          await fetch(
-            `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 6 }),
-            },
-          );
+          await interaction.deferUpdate();
         } catch (ackErr) {
           logger.error({ ackErr }, 'Failed to acknowledge Discord interaction');
         }
