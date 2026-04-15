@@ -238,7 +238,8 @@ export class DiscordChannel implements Channel {
             logger.error({ ackErr }, 'Failed to acknowledge modal submission');
           }
           try {
-            const customText = interaction.fields.getTextInputValue('custom_text');
+            const customText =
+              interaction.fields.getTextInputValue('custom_text');
             await fetch('http://localhost:8080/proxy/interaction', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -251,14 +252,18 @@ export class DiscordChannel implements Channel {
               }),
             });
           } catch (fwdErr) {
-            logger.error({ fwdErr }, 'Failed to forward modal submission to Pincer');
+            logger.error(
+              { fwdErr },
+              'Failed to forward modal submission to Pincer',
+            );
           }
           return;
         }
 
         // --- String select menus (pincer_interview_select_*) ---
         if (interaction.isStringSelectMenu()) {
-          if (!interaction.customId.startsWith('pincer_interview_select_')) return;
+          if (!interaction.customId.startsWith('pincer_interview_select_'))
+            return;
           try {
             await fetch(
               `https://discord.com/api/v10/interactions/${interaction.id}/${interaction.token}/callback`,
@@ -269,7 +274,10 @@ export class DiscordChannel implements Channel {
               },
             );
           } catch (ackErr) {
-            logger.error({ ackErr }, 'Failed to acknowledge select interaction');
+            logger.error(
+              { ackErr },
+              'Failed to acknowledge select interaction',
+            );
           }
           try {
             await fetch('http://localhost:8080/proxy/interaction', {
@@ -284,7 +292,10 @@ export class DiscordChannel implements Channel {
               }),
             });
           } catch (fwdErr) {
-            logger.error({ fwdErr }, 'Failed to forward select interaction to Pincer');
+            logger.error(
+              { fwdErr },
+              'Failed to forward select interaction to Pincer',
+            );
           }
           return;
         }
@@ -363,7 +374,10 @@ export class DiscordChannel implements Channel {
               }),
             });
           } catch (fwdErr) {
-            logger.error({ fwdErr }, 'Failed to forward skip interaction to Pincer');
+            logger.error(
+              { fwdErr },
+              'Failed to forward skip interaction to Pincer',
+            );
           }
           return;
         }
