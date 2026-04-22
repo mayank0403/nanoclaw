@@ -33,6 +33,7 @@ interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   script?: string;
+  model?: string;
 }
 
 interface ContainerOutput {
@@ -223,6 +224,54 @@ function generateFallbackName(): string {
 interface ParsedMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+function extractResolvedModel(
+  message: Record<string, unknown>,
+): string | null {
+  const candidates = [
+    message.model,
+    message.resolved_model,
+    message.resolvedModel,
+    (message.session as Record<string, unknown> | undefined)?.model,
+    (message.session as Record<string, unknown> | undefined)?.resolved_model,
+    (message.session as Record<string, unknown> | undefined)?.resolvedModel,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+function writeModelAttestation(
+  containerInput: ContainerInput,
+  sessionId: string,
+  initMessage: Record<string, unknown>,
+): void {
+  if (containerInput.groupFolder !== 'leader_claw') {
+    return;
+  }
+  const attestationPath = '/workspace/group/model_attestation.json';
+  const initKeys = Object.keys(initMessage).sort();
+  const attestation = {
+    requested_model: containerInput.model ?? null,
+    resolved_model: extractResolvedModel(initMessage),
+    session_id: sessionId,
+    group_folder: containerInput.groupFolder,
+    assistant_name: containerInput.assistantName ?? null,
+    startup_time: new Date().toISOString(),
+    init_message_keys: initKeys,
+  };
+  fs.writeFileSync(
+    attestationPath,
+    JSON.stringify(attestation, null, 2) + '\n',
+    'utf-8',
+  );
+  log(
+    `Model attestation written: requested=${attestation.requested_model ?? 'null'} resolved=${attestation.resolved_model ?? 'null'}`,
+  );
 }
 
 function parseTranscript(content: string): ParsedMessage[] {
@@ -470,6 +519,7 @@ async function runQuery(
         'mcp__nanoclaw__*',
       ],
       env: sdkEnv,
+      model: containerInput.model,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
@@ -505,6 +555,11 @@ async function runQuery(
     if (message.type === 'system' && message.subtype === 'init') {
       newSessionId = message.session_id;
       log(`Session initialized: ${newSessionId}`);
+      writeModelAttestation(
+        containerInput,
+        newSessionId,
+        message as Record<string, unknown>,
+      );
     }
 
     if (
