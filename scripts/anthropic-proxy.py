@@ -17,7 +17,7 @@ LISTEN_HOST = '172.19.0.1'
 LISTEN_PORT = 10255
 UPSTREAM_HOST = '172.17.0.1'
 UPSTREAM_PORT = 10255
-ALLOWED_SUFFIXES = ('.anthropic.com', '.claude.ai')
+ALLOWED_SUFFIXES = ('.anthropic.com', '.claude.ai', '.openrouter.ai')
 
 def is_allowed(host: str) -> bool:
     h = host.lower()
